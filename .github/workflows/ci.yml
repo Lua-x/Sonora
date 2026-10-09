@@ -42,14 +42,15 @@ jobs:
       - name: Create temporary local configuration
         run: node scripts/setup-env.mjs
       - uses: docker/setup-buildx-action@v4
+        with:
+          # Use the runner's BuildKit instead of pulling a separate builder image.
+          driver: docker
       - name: Build the runtime image
         uses: docker/build-push-action@v7
         with:
           context: .
           load: true
           tags: sonora:local
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
       - name: Validate and start PostgreSQL, migrations, web and worker
         run: |
           docker compose config --quiet
@@ -89,6 +90,8 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - uses: docker/setup-buildx-action@v4
+        with:
+          driver: docker
       - name: Lowercase registry repository
         id: repository
         env:
@@ -114,5 +117,3 @@ jobs:
           push: true
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
