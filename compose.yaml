@@ -1,0 +1,80 @@
+name: sonora
+
+x-app: &app
+  image: ${SONORA_IMAGE:-sonora:local}
+  build:
+    context: .
+    target: runtime
+  init: true
+  security_opt:
+    - no-new-privileges:true
+  cap_drop:
+    - ALL
+  environment: &environment
+    NODE_ENV: production
+    DATABASE_URL: postgresql://sonora:${POSTGRES_PASSWORD:?Run node scripts/setup-env.mjs first}@db:5432/sonora
+    APP_URL: ${APP_URL:-http://localhost:3000}
+    ENCRYPTION_KEY: ${ENCRYPTION_KEY:?Run node scripts/setup-env.mjs first}
+    SETUP_TOKEN: ${SETUP_TOKEN:?Run node scripts/setup-env.mjs first}
+    DEMO_MODE: "false"
+    SYNC_INTERVAL_MINUTES: ${SYNC_INTERVAL_MINUTES:-30}
+
+services:
+  db:
+    image: postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: sonora
+      POSTGRES_DB: sonora
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Run node scripts/setup-env.mjs first}
+      POSTGRES_INITDB_ARGS: --data-checksums
+    volumes:
+      - database:/var/lib/postgresql/data
+    healthcheck:
+      test: [CMD-SHELL, "pg_isready -U sonora -d sonora"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+    stop_grace_period: 60s
+
+  migrate:
+    <<: *app
+    command: [node, --import, tsx, scripts/migrate.ts]
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    healthcheck:
+      disable: true
+
+  web:
+    <<: *app
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${PORT:-3000}:3000"
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    stop_grace_period: 30s
+
+  worker:
+    <<: *app
+    command: [node, --import, tsx, src/worker.ts]
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: [CMD, node, --import, tsx, scripts/worker-health.ts]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+    stop_grace_period: 60s
+
+volumes:
+  database:

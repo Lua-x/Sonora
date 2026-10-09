@@ -1,0 +1,20 @@
+name: sonora-demo
+services:
+  web:
+    image: sonora:demo
+    build:
+      context: .
+      target: runtime
+    init: true
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      DEMO_MODE: "true"
+      APP_URL: http://localhost:3001
+    ports:
+      - "127.0.0.1:3001:3000"
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 30s

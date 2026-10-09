@@ -1,0 +1,118 @@
+name: Sonora checks and image
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sonora-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.21.0
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npm audit --omit=dev --audit-level=moderate
+      - run: npm run typecheck
+      - run: npm run lint
+      - run: npm test
+      - run: npm run build
+
+  docker:
+    needs: checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 24.21.0
+      - uses: docker/setup-buildx-action@v3
+      - name: Build the runtime image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          load: true
+          tags: sonora:local
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Create temporary local configuration
+        run: node scripts/setup-env.mjs
+      - name: Validate and start PostgreSQL, migrations, web and worker
+        run: |
+          docker compose config --quiet
+          docker compose up -d --no-build --wait --wait-timeout 120
+      - name: Exercise personal setup, worker imports, deduplication and four-period statistics
+        run: node scripts/smoke.mjs seed
+      - name: Check real account and music history persistence across container recreation
+        run: |
+          docker compose down
+          docker compose up -d --no-build --wait --wait-timeout 120
+          node scripts/smoke.mjs verify
+      - name: Check isolated demo container
+        run: |
+          docker tag sonora:local sonora:demo
+          docker compose -f compose.demo.yaml up -d --no-build --wait --wait-timeout 90
+          node scripts/smoke.mjs demo
+      - name: Container diagnostics on failure
+        if: failure()
+        run: |
+          docker compose ps --all
+          docker compose logs --tail=100 web worker migrate
+          docker compose -f compose.demo.yaml logs --tail=60 web
+      - name: Stop test containers
+        if: always()
+        run: |
+          docker compose -f compose.demo.yaml down --volumes || true
+          docker compose down --volumes || true
+
+  publish:
+    needs: [checks, docker]
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/tags/v'))
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v6
+      - uses: docker/setup-buildx-action@v3
+      - name: Lowercase registry repository
+        id: repository
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: echo "image=ghcr.io/${REPOSITORY,,}" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: metadata
+        with:
+          images: ${{ steps.repository.outputs.image }}
+          tags: |
+            type=sha,format=long
+            type=raw,value=main,enable=${{ github.ref == 'refs/heads/main' }}
+            type=semver,pattern={{version}}
+          flavor: latest=false
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.metadata.outputs.tags }}
+          labels: ${{ steps.metadata.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
