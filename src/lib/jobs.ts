@@ -4,8 +4,9 @@ import {getDb} from './db';
 import {jobs,sources,system} from './schema';
 import {insertEvents} from './repository';
 import {decrypt,HttpError} from './security';
-import {connectors} from './connectors';
+import {connectors,fetchListenBrainzNowPlaying} from './connectors';
 import {ConnectorError} from './connectors/http';
+import type {ListeningEvent} from './types';
 
 export async function enqueueSync(sourceId:string) {
   const db=await getDb();
@@ -59,11 +60,23 @@ export async function runOneJob() {
       if(!source.enabled) throw new HttpError(400,'Quelle wurde getrennt.');
       const connector=connectors[source.kind as 'lastfm'|'listenbrainz'];
       if(!connector||!source.username) throw new HttpError(400,'Quelle ist ungültig.');
-      const page=await connector.fetchPage({sourceId:source.id,username:source.username,apiKey:source.secret?decrypt(source.secret):undefined,cursor:job.payload.cursor,since:job.payload.since});
+      const config={sourceId:source.id,username:source.username,apiKey:source.secret?decrypt(source.secret):undefined,cursor:job.payload.cursor,since:job.payload.since};
+      const page=await connector.fetchPage(config);
+      // Last.fm reports playing-now on the first page. Historical pages must not
+      // erase it; the repository independently expires transient events.
+      let nowPlaying:ListeningEvent[]|undefined=source.kind==='lastfm'&&!job.payload.cursor?page.events.filter(e=>e.nowPlaying):undefined;
+      let coverageNote=page.coverageNote;
+      if(source.kind==='listenbrainz'&&page.done) {
+        try { nowPlaying=await fetchListenBrainzNowPlaying(config); }
+        catch {
+          nowPlaying=[];
+          coverageNote+=' Aktuelle Wiedergabe vorübergehend nicht verfügbar; der Hörverlauf wurde erfolgreich synchronisiert.';
+        }
+      }
       await withActiveJob(async tx=>{
         const inserted=await insertEvents(page.events,tx);
         const now=new Date().toISOString();
-        await tx.update(sources).set({coverageNote:page.coverageNote,nowPlaying:page.events.filter(e=>e.nowPlaying),error:null,
+        await tx.update(sources).set({coverageNote,...(nowPlaying===undefined?{}:{nowPlaying}),error:null,
           ...(page.done?{lastSuccessAt:now,nextSyncAt:new Date(Date.now()+source.intervalMinutes*60000).toISOString()}:{})}).where(eq(sources.id,source.id));
         await tx.update(jobs).set({status:page.done?'complete':'queued',error:null,progress:page.done?100:Math.min(95,job.progress+1),payload:{cursor:page.cursor,since:job.payload.since,processed:(job.payload.processed||0)+page.events.length,inserted:(job.payload.inserted||0)+inserted},updatedAt:now}).where(eq(jobs.id,id));
       });

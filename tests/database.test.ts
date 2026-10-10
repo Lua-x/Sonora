@@ -5,9 +5,9 @@ import {events,sources,jobs} from '../src/lib/schema';
 import {insertEvents,allEvents,sourceStatuses,history} from '../src/lib/repository';
 import {enqueueSync,runOneJob,scheduleSyncs} from '../src/lib/jobs';
 import type {ListeningEvent} from '../src/lib/types';
-import {connectors} from '../src/lib/connectors';
+import {connectors,fetchListenBrainzNowPlaying} from '../src/lib/connectors';
 import {ConnectorError} from '../src/lib/connectors/http';
-vi.mock('../src/lib/connectors',()=>({connectors:{lastfm:{fetchPage:vi.fn(async()=>({events:[play('sync-event','lastfm:test')],cursor:null,done:true,coverageNote:'Testquelle'}))}}}));
+vi.mock('../src/lib/connectors',()=>({connectors:{lastfm:{fetchPage:vi.fn(async()=>({events:[play('sync-event','lastfm:test')],cursor:null,done:true,coverageNote:'Testquelle'}))},listenbrainz:{fetchPage:vi.fn()}},fetchListenBrainzNowPlaying:vi.fn()}));
 function play(externalId:string,sourceId='test'):ListeningEvent{return {sourceId,sourceKind:'csv',externalId,playedAt:'2026-03-29T00:30:00Z',artist:'Test Artist',track:'Track',album:null,durationMs:null,durationKind:null,tags:[],nowPlaying:false};}
 beforeAll(async()=>{process.env.PGLITE_PATH=':memory:';const db=await getDb();await db.insert(sources).values({id:'test',kind:'csv',label:'Test',enabled:false});});
 afterAll(async()=>{await closeDb();delete process.env.PGLITE_PATH;});
@@ -62,6 +62,54 @@ describe('persistente Daten und Hintergrundaufträge',()=>{
     expect(Date.parse(job.payload.retryAt!)).toBeGreaterThanOrEqual(Date.parse(now)+7200000);
     expect(await runOneJob()).toBe(false);
     await db.delete(sources).where(eq(sources.id,'lastfm:limit'));
+  });
+  it('behält Last.fm playing-now über Historienseiten und leert es bei einem neuen Abruf ohne Wiedergabe',async()=>{
+    const db=await getDb(),sourceId='lastfm:playing';
+    const live={...play('live',sourceId),sourceKind:'lastfm' as const,playedAt:new Date().toISOString(),nowPlaying:true};
+    await db.insert(sources).values({id:sourceId,kind:'lastfm',label:'Playing',username:'playing'});
+    vi.mocked(connectors.lastfm.fetchPage)
+      .mockResolvedValueOnce({events:[live,play('first',sourceId)],cursor:'second-page',done:false,coverageNote:'Testquelle'})
+      .mockResolvedValueOnce({events:[play('second',sourceId)],cursor:null,done:true,coverageNote:'Testquelle'})
+      .mockResolvedValueOnce({events:[],cursor:null,done:true,coverageNote:'Testquelle'});
+    await enqueueSync(sourceId);await runOneJob();
+    expect((await allEvents(sourceId)).filter(event=>event.nowPlaying)).toEqual([live]);
+    await runOneJob();
+    expect((await allEvents(sourceId)).filter(event=>event.nowPlaying)).toEqual([live]);
+    expect(await db.select().from(events).where(eq(events.sourceId,sourceId))).toHaveLength(2);
+    await enqueueSync(sourceId);await runOneJob();
+    expect((await db.select().from(sources).where(eq(sources.id,sourceId)))[0].nowPlaying).toEqual([]);
+  });
+  it('holt ListenBrainz playing-now einmal nach der letzten Historienseite und speichert es nur transient',async()=>{
+    const db=await getDb(),sourceId='listenbrainz:playing';
+    const live={...play('live',sourceId),sourceKind:'listenbrainz' as const,playedAt:new Date().toISOString(),nowPlaying:true};
+    await db.insert(sources).values({id:sourceId,kind:'listenbrainz',label:'Playing',username:'playing'});
+    vi.mocked(fetchListenBrainzNowPlaying).mockClear().mockResolvedValueOnce([live]);
+    vi.mocked(connectors.listenbrainz.fetchPage)
+      .mockResolvedValueOnce({events:[play('first',sourceId)],cursor:'second-page',done:false,coverageNote:'Testquelle'})
+      .mockResolvedValueOnce({events:[play('second',sourceId)],cursor:null,done:true,coverageNote:'Testquelle'});
+    const id=await enqueueSync(sourceId);await runOneJob();
+    expect(fetchListenBrainzNowPlaying).not.toHaveBeenCalled();
+    await runOneJob();
+    expect(fetchListenBrainzNowPlaying).toHaveBeenCalledTimes(1);
+    expect(fetchListenBrainzNowPlaying).toHaveBeenCalledWith(expect.objectContaining({sourceId,username:'playing'}));
+    expect((await allEvents(sourceId)).filter(event=>event.nowPlaying)).toEqual([live]);
+    expect(await db.select().from(events).where(eq(events.sourceId,sourceId))).toHaveLength(2);
+    expect((await db.select().from(jobs).where(eq(jobs.id,id!)))[0].status).toBe('complete');
+  });
+  it('schließt die ListenBrainz-Historie trotz playing-now-Ausfall ab und entfernt einen veralteten Live-Stand',async()=>{
+    const db=await getDb(),sourceId='listenbrainz:unavailable';
+    await db.insert(sources).values({id:sourceId,kind:'listenbrainz',label:'Unavailable',username:'unavailable',nowPlaying:[{...play('old-live',sourceId),nowPlaying:true}]});
+    vi.mocked(connectors.listenbrainz.fetchPage).mockResolvedValueOnce({events:[play('history',sourceId)],cursor:null,done:true,coverageNote:'Historie vollständig.'});
+    vi.mocked(fetchListenBrainzNowPlaying).mockRejectedValueOnce(new ConnectorError('Provider secret must not leak',120));
+    const id=await enqueueSync(sourceId);await runOneJob();
+    const [source]=await db.select().from(sources).where(eq(sources.id,sourceId));
+    const [job]=await db.select().from(jobs).where(eq(jobs.id,id!));
+    expect(job.status).toBe('complete');expect(job.payload.inserted).toBe(1);
+    expect(await allEvents(sourceId)).toHaveLength(1);
+    expect(source.nowPlaying).toEqual([]);expect(source.error).toBeNull();expect(source.lastSuccessAt).not.toBeNull();
+    expect(source.coverageNote).toContain('Historie vollständig.');
+    expect(source.coverageNote).toContain('Aktuelle Wiedergabe vorübergehend nicht verfügbar');
+    expect(source.coverageNote).not.toContain('Provider secret');
   });
   it('verwirft eine laufende Provider-Antwort nach dem Trennen der Quelle',async()=>{
     const db=await getDb();

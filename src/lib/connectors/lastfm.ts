@@ -10,7 +10,7 @@ export const lastfm: Connector = {
     const saved = cursorObject(config.cursor);
     const since = sinceEpoch(config.since);
     const state = saved ?? { kind: 'lastfm', page: 1, to: Math.floor(Date.now() / 1000), from: since === null ? null : Math.max(0, since - 86_400), boundary: {} };
-    if (state.kind !== 'lastfm' || !Number.isSafeInteger(state.page) || Number(state.page) < 1 || !Number.isSafeInteger(state.to) || (state.from !== null && !Number.isSafeInteger(state.from))) throw new ConnectorError('Ungültiger Last.fm-Synchronisationscursor.');
+    if (state.kind !== 'lastfm' || !Number.isSafeInteger(state.page) || Number(state.page) < 1 || !Number.isSafeInteger(state.to) || (state.from !== null && !Number.isSafeInteger(state.from)) || (state.invalid !== undefined && (!Number.isSafeInteger(state.invalid) || Number(state.invalid) < 0))) throw new ConnectorError('Ungültiger Last.fm-Synchronisationscursor.');
     const url = new URL('https://ws.audioscrobbler.com/2.0/');
     url.search = new URLSearchParams({ method: 'user.getRecentTracks', user: username, api_key: config.apiKey, format: 'json', limit: '200', page: String(state.page), to: String(state.to) }).toString();
     if (state.from !== null) url.searchParams.set('from', String(state.from));
@@ -22,7 +22,7 @@ export const lastfm: Connector = {
     if (!Number.isSafeInteger(totalPages) || totalPages < 0 || tracks.length > 201) throw new ConnectorError('Last.fm lieferte ungültige Seitendaten.');
     const counts = new Map<string, number>(Object.entries(object(state.boundary)).map(([key, value]) => [key, Number(value)]));
     const events: ListeningEvent[] = [];
-    let invalid = 0;
+    let invalid = Number(state.invalid ?? 0);
     for (const value of tracks) {
       try {
         const row = object(value);
@@ -48,8 +48,8 @@ export const lastfm: Connector = {
     if (!done && tracks.length === 0) throw new ConnectorError('Last.fm lieferte vor Ende der Historie eine leere Seite. Erneut synchronisieren.');
     return {
       events, done,
-      cursor: done ? null : JSON.stringify({ ...state, page: Number(state.page) + 1, boundary }),
-      coverageNote: `Scrobbles über Last.fm; keine gemessene Hörzeit. Nur tatsächlich an Last.fm gemeldete Wiedergaben. ${state.from === null ? 'Historischer Abruf aller verfügbaren Seiten.' : 'Inkrementeller Abruf mit 24 Stunden Überlappung; ältere Nachmeldungen benötigen erneuten historischen Abruf.'}${invalid ? ` ${invalid} ungültige Einträge dieser Seite ausgelassen: mögliche Datenlücke.` : ''}`,
+      cursor: done ? null : JSON.stringify({ ...state, page: Number(state.page) + 1, boundary, invalid }),
+      coverageNote: `Scrobbles über Last.fm; keine gemessene Hörzeit. Nur tatsächlich an Last.fm gemeldete Wiedergaben. ${state.from === null ? 'Historischer Abruf aller verfügbaren Seiten.' : 'Inkrementeller Abruf mit 24 Stunden Überlappung; ältere Nachmeldungen benötigen erneuten historischen Abruf.'}${invalid ? ` ${invalid} ungültige Einträge während dieser Synchronisation ausgelassen: mögliche Datenlücke.` : ''}`,
     };
   },
 };

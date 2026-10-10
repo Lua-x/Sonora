@@ -21,7 +21,8 @@ x-app: &app
 
 services:
   db:
-    image: postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
+    # Docker Official Image; the ECR mirror has the identical pinned manifest.
+    image: public.ecr.aws/docker/library/postgres:17.11-bookworm@sha256:3645570cccdfa447589da9f57dd740faa29b30938e861289a5574b6ca6b03826
     restart: unless-stopped
     environment:
       POSTGRES_USER: sonora

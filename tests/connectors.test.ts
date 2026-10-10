@@ -63,6 +63,22 @@ describe('Last.fm connector', () => {
     expect(page.events).toHaveLength(0);
     expect(page.coverageNote).toContain('Datenlücke');
   });
+
+  it('retains the accumulated gap warning through later valid pages and completion', async () => {
+    const invalidTrack = { ...lastTrack(), date: { uts: 'invalid' } };
+    const fetcher = vi.fn<typeof fetch>()
+      .mockResolvedValueOnce(response({ recenttracks: { track: [invalidTrack, lastTrack()], '@attr': { totalPages: '3' } } }))
+      .mockResolvedValueOnce(response({ recenttracks: { track: [invalidTrack, lastTrack()], '@attr': { totalPages: '3' } } }))
+      .mockResolvedValueOnce(response({ recenttracks: { track: [lastTrack()], '@attr': { totalPages: '3' } } }));
+    const first = await settle(lastfm.fetchPage(config, fetcher));
+    expect(JSON.parse(first.cursor!).invalid).toBe(1);
+    const second = await settle(lastfm.fetchPage({ ...config, cursor: first.cursor }, fetcher));
+    expect(JSON.parse(second.cursor!).invalid).toBe(2);
+    const final = await settle(lastfm.fetchPage({ ...config, cursor: second.cursor }, fetcher));
+    expect(final.done).toBe(true);expect(final.cursor).toBeNull();
+    expect(final.coverageNote).toContain('2 ungültige Einträge während dieser Synchronisation');
+    expect(final.coverageNote).toContain('Datenlücke');
+  });
 });
 
 describe('ListenBrainz connector', () => {

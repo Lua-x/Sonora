@@ -1,6 +1,6 @@
-# syntax=docker/dockerfile:1
-# Official multi-architecture manifest checked on 2026-10-08.
-ARG NODE_IMAGE=node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
+# Docker Official Image from its public ECR mirror; digest verified on 2026-10-10.
+# Use the bundled Dockerfile frontend to avoid an unnecessary registry dependency.
+ARG NODE_IMAGE=public.ecr.aws/docker/library/node:24.21.0-bookworm-slim@sha256:d6aa754f16b3197301076f047b5def2f02ea1dbbc2ca920407d46d7ec7f87b20
 FROM ${NODE_IMAGE} AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
