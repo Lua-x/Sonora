@@ -134,6 +134,19 @@ describe('honest listening metrics', () => {
     expect(result.newTracks).toHaveLength(2);
   });
 
+  it('keeps discoveries global while a source filter narrows counts and rankings', () => {
+    const selected = [
+      event('2026-10-08T10:00:00Z', { sourceId: 'source-b' }),
+      event('2026-10-08T11:00:00Z', { sourceId: 'source-b', artist: 'Neu', track: 'Neuer Titel' }),
+    ];
+    const history = [event('2023-01-01T12:00:00Z'), event('2026-10-08T09:00:00Z', { artist: 'Andere Quelle' }), ...selected];
+    const result = computeAnalytics(selected, [{ ...source, id: 'source-b' }], period, later, history);
+    expect(result.counts.plays).toBe(2);
+    expect(result.topArtists.map(item => item.name)).not.toContain('Andere Quelle');
+    expect(result.newArtists).toEqual(['Neu']);
+    expect(result.newTracks).toEqual([{ name: 'Neuer Titel', artist: 'Neu' }]);
+  });
+
   it('flags cross-source pairs within two seconds, without merging any events', () => {
     const result = computeAnalytics([
       event('2026-10-08T10:00:00Z'),

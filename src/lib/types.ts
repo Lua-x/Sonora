@@ -62,6 +62,7 @@ export interface Analytics {
 export interface ImportPreview {
   format: 'csv' | 'json' | 'spotify';
   events: ListeningEvent[];
+  eventRows: number[];
   errors: { row: number; message: string }[];
   warnings: string[];
   totalRows: number;

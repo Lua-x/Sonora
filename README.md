@@ -15,7 +15,7 @@ docker compose ps
 Alternativ kann die Konfiguration ohne lokal installiertes Node erzeugt werden:
 
 ```sh
-docker run --rm -v "${PWD}:/app" -w /app node:24.21.0-bookworm-slim node scripts/setup-env.mjs
+docker run --rm -v "${PWD}:/app" -w /app public.ecr.aws/docker/library/node:24.21.0-bookworm-slim node scripts/setup-env.mjs
 docker compose up -d --build
 ```
 
@@ -40,7 +40,7 @@ docker compose -f compose.demo.yaml down
 ## Eigene Musikdaten
 
 - **Last.fm:** Im Bereich Datenquellen den Last.fm-Benutzernamen und einen eigenen API-Schlüssel verbinden. Neue Scrobbles werden regelmäßig synchronisiert. Der Umfang des initialen Imports und die Bedingungen sind in [Integrationen](docs/integrations.md) beschrieben. Ein Last.fm-Konto muss zuvor durch einen passenden Scrobbler mit Musik versorgt werden.
-- **ListenBrainz:** Benutzernamen verbinden; die öffentliche Lese-Schnittstelle benötigt keinen persönlichen Schreibtoken. Für ältere Historie den offiziellen Datenexport nutzen und als JSON importieren. Verbinde vor dem Import genau das zugehörige ListenBrainz-Konto, damit Ereignisse mit dessen Synchronisation abgeglichen werden.
+- **ListenBrainz:** Benutzernamen verbinden; die öffentliche Lese-Schnittstelle benötigt keinen persönlichen Schreibtoken. Für ältere Historie den offiziellen Datenexport nutzen und als JSON importieren. Verbinde vor dem Import das zugehörige ListenBrainz-Konto und wähle es ausdrücklich als Importziel aus, damit Ereignisse mit dessen Synchronisation abgeglichen werden. Ohne Auswahl bleibt der Export eine separate Quelle.
 - **CSV und JSON:** Datei auswählen, Vorschau und Fehler prüfen, Import bestätigen. Größere Importe verarbeitet der Worker in Portionen. Maximal 20 MiB und 100.000 Zeilen pro Datei; eine Vorschau verfällt nach 24 Stunden. Fehlerhafte Dateien müssen vor dem Import korrigiert werden.
 - **Persönlicher Spotify-Export:** Den getrennten Importtyp „Spotify“ verwenden. Unterstützt werden regulärer und erweiterter Hörverlauf als JSON. Es gibt keine direkte Spotify-API-Verbindung. Podcasts und Hörbücher werden ausgelassen. Grenzen und rechtliche Grundlage sind separat in [Integrationen](docs/integrations.md) dokumentiert.
 
@@ -55,7 +55,7 @@ mein-ereignis-001,2026-10-08T18:30:00Z,Beispielkünstler,Beispieltitel,Beispiela
 
 JSON kann eine Liste oder `{ "events": [...] }` enthalten. Pflichtfelder sind `playedAt` mit UTC/Offset, `artist` und `track`. Optional: `externalId`, `album`, `durationMs`, `durationKind` (`measured` oder `estimated`) und `tags`. Tags sind im JSON eine Textliste und in CSV mit `|` getrennt. Dauern ohne Kennzeichnung werden als Schätzung behandelt. Stabile `externalId`-Werte erleichtern eindeutige Wiederholungsimporte.
 
-Wiederholte Importe und Synchronisationen werden je Quelle anhand stabiler Kennungen abgeglichen. Mehrfach abgespielte Songs bleiben erhalten. Identische Ereignisse ohne Quellkennung sind über unterschiedlich aufgeteilte Dateien nicht immer eindeutig unterscheidbar. Vollständige Originaldateien zusammenhängend importieren; Sonora erklärt solche Grenzen in der Vorschau. Quellenübergreifende Ähnlichkeit führt zu einem Hinweis, nicht zu einer stillen Zusammenführung.
+Wiederholte Importe und Synchronisationen werden je Quelle anhand stabiler Kennungen abgeglichen. Eine bereits vergebene `externalId` mit abweichendem Zeitpunkt, Künstler oder Titel wird als Konflikt gemeldet; korrigiere solche IDs vor dem Import. Mehrfach abgespielte Songs bleiben erhalten. Identische Ereignisse ohne Quellkennung sind über unterschiedlich aufgeteilte Dateien nicht immer eindeutig unterscheidbar. Vollständige Originaldateien zusammenhängend importieren; Sonora erklärt solche Grenzen in der Vorschau. Quellenübergreifende Ähnlichkeit führt zu einem Hinweis, nicht zu einer stillen Zusammenführung.
 
 ## Kennzahlen und Rückblicke
 
@@ -66,7 +66,7 @@ Laufende Zeiträume vergleichen denselben lokalen Kalenderfortschritt im vorheri
 - „Plays“ sind gespeicherte Wiedergaben bzw. Scrobbles, keine Behauptung einer vollständigen Nutzungserfassung.
 - Tatsächliche Hörzeit summiert ausschließlich als gemessen gekennzeichnete Wiedergabedauern. Schätzungen werden separat angezeigt. Fehlende Dauer bleibt unbekannt; eine ausdrücklich gemessene Dauer von 0 ms bleibt ein bekannter Wert.
 - Titel werden durch Künstler und Titelname unterschieden; Alben durch Künstler und Albumname. Fehlende Alben zählen nicht als ein eigenes Album.
-- „Neu“ bedeutet erstmals in der gesamten verfügbaren Historie, nicht erstmals im Leben gehört.
+- „Neu“ bedeutet erstmals in der gesamten verfügbaren Historie, auch bei ausgewähltem Quellenfilter, nicht erstmals im Leben gehört.
 - „Läuft gerade“ zählt nicht als abgeschlossenes Hörereignis.
 - Tags erscheinen nur, wenn sie in den Daten vorliegen. Sonora errät keine Genres.
 - Erste und letzte Einträge einer Quelle belegen keine durchgehende Abdeckung. Tage ohne gespeicherte Einträge sind kein sicherer Nachweis von Inaktivität.
@@ -99,6 +99,6 @@ Für eine isolierte lokale Browserprüfung ohne PostgreSQL kann `PGLITE_PATH=./d
 
 ## Stand der Abnahme
 
-Die fachlichen Analytics-Tests laufen lokal erfolgreich. Weitere Prüfungen und der aktuelle Meilensteinstatus werden in [docs/progress.md](docs/progress.md) festgehalten. Auf der ursprünglichen Entwicklungsumgebung steht keine Docker-Engine zur Verfügung: Docker-Build, vollständiger Compose-Start und Container-Neustart-Persistenz sind dort noch nicht praktisch bestätigt. Der Workflow enthält diese Prüfungen und muss im Ziel-Repository erfolgreich laufen, bevor dieser Teil der Abnahme als abgeschlossen gilt.
+Der [vollständige Actions-Lauf für 2f03edd](https://github.com/Lua-x/Sonora/actions/runs/38062449662) hat Typprüfung, Lint, Tests, Produktionsbuild, Docker-Build, Compose-Start, Container-Neustart-Persistenz und GHCR-Veröffentlichung erfolgreich abgeschlossen. Einrichtung, Dateiimport, Dashboard, Hörverlauf und Rückblicke wurden zusätzlich im lokalen Browser geprüft. Details und spätere Korrekturen stehen in [docs/progress.md](docs/progress.md); den Status des aktuellen Commits zeigt [GitHub Actions](https://github.com/Lua-x/Sonora/actions).
 
-Reale Anbieterzugriffe benötigen eigene gültige Zugangsdaten bzw. einen existierenden öffentlichen Benutzernamen. Tests mit kontrollierten API-Antworten ersetzen keine bestätigte Synchronisation deines Kontos. Offene externe Voraussetzungen werden nicht durch Demo-Daten verdeckt.
+Die lokale Entwicklungsumgebung hat keine Docker-Engine; die praktische Container-Abnahme erfolgte deshalb auf dem GitHub-Runner. Für den eigenen Betrieb Docker bereitstellen. Reale Anbieterzugriffe benötigen eigene gültige Zugangsdaten bzw. einen existierenden öffentlichen Benutzernamen. Die Konten werden wie vereinbart später in Sonora eingerichtet; Tests mit kontrollierten API-Antworten ersetzen keine bestätigte Synchronisation deines Kontos.

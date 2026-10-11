@@ -1,6 +1,6 @@
 # Betrieb von Sonora
 
-Prüfdatum der Konfiguration und offiziellen Basisimages: **08.10.2026**. Die vollständige Container-Ausführung muss auf einer verfügbaren Docker-Engine bzw. durch den Repository-Workflow bestätigt werden; siehe [Abnahmestand](progress.md).
+Stand: **11.10.2026**. Der vollständige Compose-Start, Container-Neustart mit erhaltenen Daten und die GHCR-Veröffentlichung wurden im [Repository-Workflow](https://github.com/Lua-x/Sonora/actions/runs/38062449662) erfolgreich geprüft; siehe [Abnahmestand](progress.md).
 
 ## Konfiguration und Start
 
@@ -93,7 +93,7 @@ docker compose up -d --build
 docker compose ps
 ```
 
-Basisimages sind auf Version **und Manifest-Digest** festgelegt: Node `24.21.0-bookworm-slim` und PostgreSQL `17.11-bookworm`. Die öffentlichen Registry-Manifeste wurden mit HTTP 200 geprüft. Ein erneuter Build ändert diese Images daher nicht stillschweigend. Sicherheitsupdates erfordern einen bewusst geprüften Digest-/Versionswechsel; die npm-Versionen stehen im Lockfile. Quellen: [Node Official Image](https://hub.docker.com/_/node), [PostgreSQL Official Image](https://hub.docker.com/_/postgres), [PostgreSQL-Versionierung](https://www.postgresql.org/support/versioning/).
+Basisimages sind auf Version **und Manifest-Digest** festgelegt: Node `24.21.0-bookworm-slim` und PostgreSQL `17.11-bookworm`. Sie werden über den öffentlichen ECR-Spiegel unter `public.ecr.aws/docker/library/` bezogen. Die Manifest-Digests wurden am 10.10.2026 mit den offiziellen Docker-Hub-Images abgeglichen und stimmen überein. Das vermeidet die während der ersten CI-Läufe beobachteten Docker-Hub-Authentifizierungs-Timeouts. Ein erneuter Build ändert diese Images nicht stillschweigend. Sicherheitsupdates erfordern einen bewusst geprüften Digest-/Versionswechsel; die npm-Versionen stehen im Lockfile. Quellen: [Docker Official Images auf ECR](https://gallery.ecr.aws/docker/), [Node Official Image](https://hub.docker.com/_/node), [PostgreSQL Official Image](https://hub.docker.com/_/postgres), [PostgreSQL-Versionierung](https://www.postgresql.org/support/versioning/).
 
 Ein PostgreSQL-Major-Upgrade ist kein einfaches Image-Tag-Update. Dafür Dump/Restore oder ein geplantes `pg_upgrade` durchführen. Die Volume-Position dieses Projekts gilt für PostgreSQL 17 (`/var/lib/postgresql/data`); neuere Major-Versionen haben abweichende Vorgaben.
 

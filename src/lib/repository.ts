@@ -3,6 +3,8 @@ import { and, asc, desc, eq, ilike, or, sql } from 'drizzle-orm';
 import {getDb} from './db';
 import {events,sources,jobs} from './schema';
 import type {ListeningEvent,SourceStatus} from './types';
+import {fingerprint} from './connectors/common';
+import {HttpError} from './security';
 
 export async function sourceStatuses():Promise<SourceStatus[]> {
   const db=await getDb();
@@ -22,11 +24,39 @@ export async function allEvents(sourceId?:string):Promise<ListeningEvent[]> {
   const active=await db.select({nowPlaying:sources.nowPlaying}).from(sources).where(sourceId?eq(sources.id,sourceId):undefined);
   return [...rows.map(row=>({...row,playedAt:new Date(row.playedAt).toISOString(),nowPlaying:false})),...active.flatMap(s=>s.nowPlaying).filter(e=>Date.now()-Date.parse(e.playedAt)<600000)];
 }
-export async function insertEvents(input:ListeningEvent[],database?:Pick<Awaited<ReturnType<typeof getDb>>,'insert'>) {
-  const db=database||await getDb();let inserted=0;
+type Database=Awaited<ReturnType<typeof getDb>>;
+type Transaction=Parameters<Parameters<Database['transaction']>[0]>[0];
+const eventConflictMessage='Diese externalId gehört in derselben Quelle bereits zu einem anderen Hörereignis. Bitte eindeutige IDs verwenden oder die Datei korrigieren.';
+const scopedEventId=(event:Pick<ListeningEvent,'sourceId'|'externalId'>)=>JSON.stringify([event.sourceId,event.externalId]);
+// PostgreSQL may return the same instant with a different UTC offset/precision.
+const eventIdentity=(event:Pick<ListeningEvent,'playedAt'|'artist'|'track'>)=>fingerprint({...event,playedAt:new Date(event.playedAt).toISOString()});
+
+export async function findEventConflicts(input:ListeningEvent[],database?:Pick<Database,'select'>) {
+  const db=database||await getDb(),conflicts:{index:number;message:string}[]=[];
+  for(let offset=0;offset<input.length;offset+=200) {
+    const batch=input.slice(offset,offset+200);
+    const existing=await db.select({sourceId:events.sourceId,externalId:events.externalId,playedAt:events.playedAt,artist:events.artist,track:events.track}).from(events)
+      .where(or(...batch.map(event=>and(eq(events.sourceId,event.sourceId),eq(events.externalId,event.externalId)))));
+    const identities=new Map(existing.map(event=>[scopedEventId(event),eventIdentity(event)]));
+    batch.forEach((event,index)=>{
+      const identity=identities.get(scopedEventId(event));
+      if(identity!==undefined&&identity!==eventIdentity(event))conflicts.push({index:offset+index,message:eventConflictMessage});
+    });
+  }
+  return conflicts;
+}
+
+export async function insertEvents(input:ListeningEvent[],database?:Transaction):Promise<number> {
+  if(!database)return (await getDb()).transaction(tx=>insertEvents(input,tx));
+  let inserted=0;
   for(let i=0;i<input.length;i+=200) {
     const batch=input.slice(i,i+200).filter(e=>!e.nowPlaying).map(e=>({id:randomUUID(),sourceId:e.sourceId,sourceKind:e.sourceKind,externalId:e.externalId,playedAt:e.playedAt,artist:e.artist,track:e.track,album:e.album,durationMs:e.durationMs,durationKind:e.durationKind,tags:e.tags}));
-    if(batch.length) inserted+=(await db.insert(events).values(batch).onConflictDoNothing({target:[events.sourceId,events.externalId]}).returning({id:events.id})).length;
+    if(!batch.length)continue;
+    inserted+=(await database.insert(events).values(batch).onConflictDoNothing({target:[events.sourceId,events.externalId]}).returning({id:events.id})).length;
+    // Check after the INSERT: a concurrent insert may win after preview validation.
+    // The enclosing transaction rolls this batch back instead of silently losing a play.
+    const conflicts=await findEventConflicts(batch.map(event=>({...event,nowPlaying:false})),database);
+    if(conflicts.length)throw new HttpError(409,eventConflictMessage);
   }
   return inserted;
 }

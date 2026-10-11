@@ -1,28 +1,43 @@
-# Sonora – Umsetzung
+# Sonora – Umsetzung und Abnahme
 
-Prüfdatum: 09.10.2026. Ziel: persönliche, selbst gehostete Musikauswertung auf Deutsch.
+Stand: **11.10.2026**. Ziel: persönliche, selbst gehostete Musikauswertung auf Deutsch.
 
 ## Meilensteine
 
-1. Quellenprüfung, TypeScript-Domänenvertrag und Docker-Grundlage – in Arbeit.
-2. Geschützter Einzelzugang, PostgreSQL, Dateiimport und Last.fm – in Arbeit.
-3. Zeitzonenfeste Auswertung, Dashboard, Hörverlauf – in Arbeit.
-4. ListenBrainz, Rückblickkarten, lokaler Export – in Arbeit.
-5. CI/GHCR, Betrieb, Abnahme – offen.
+1. **Umgesetzt:** offizielle Datenquellen und Nutzungsgrenzen geprüft, dokumentierter Domänenvertrag, Projektstruktur und Docker-Grundlage.
+2. **Umgesetzt:** geschützter Einzelzugang, PostgreSQL, Dateiimport mit Vorschau und Hintergrundaufträgen, Last.fm-Connector.
+3. **Umgesetzt:** zeitzonengenaue Auswertungen, Dashboard, filterbarer und paginierter Hörverlauf.
+4. **Umgesetzt:** ListenBrainz-Connector, offizieller Historienexport als Importweg, vier Rückblickzeiträume, lokaler PNG-Export und persönlicher JSON-Export.
+5. **Geprüft:** GitHub-Pushes, CI, Docker-Build, Compose-Start, Persistenz bei Container-Neuerstellung und GHCR-Veröffentlichung. README, Konfigurationsbeispiel und Betriebshandbuch vorhanden.
+
+## Nachweise
+
+- [Vollständiger erfolgreicher Workflow für Commit 2f03edd](https://github.com/Lua-x/Sonora/actions/runs/38062449662): Typprüfung, Lint, Tests, Produktionsbuild, Sicherheitsprüfung, Docker-Build und Image-Veröffentlichung.
+- Derselbe Lauf startet PostgreSQL, Migration, Web und separaten Worker. Die API-Prüfung umfasst Erstsetup, geschützten Zugriff, Origin-Schutz, Worker-Import, wiederholten Import ohne Duplikate, vier Kalenderzeiträume, JSON-Export und Ab-/Anmeldung.
+- Nach Container-Neuerstellung ohne Volume-Löschung bestätigt die Prüfung denselben Zugang, Sitzung, Einstellungen, Hörverlauf und einen weiteren Worker-Import. Der separate Demo-Container besteht Daten- und Schreibschutzprüfung.
+- Lokale Browserabnahme mit isolierter PGlite-Testdatenbank und fiktiven Importdaten: Erstsetup, Leerzustand, Importvorschau und Hintergrundverarbeitung, Dashboard, Tagesfilter, Hörverlaufsuche, Sortierung, Pagination, Rückblicke und tatsächlich heruntergeladener PNG-Export. Desktop und mobile Darstellung sowie heller Modus wurden geprüft.
+- Letzte lokale Prüfung am 11.10.2026: **80 Tests in 7 Dateien erfolgreich**, TypeScript, ESLint und Produktionsbuild erfolgreich. Enthalten sind Sommerzeit, Kalendergrenzen, unvollständige Vergleichszeiträume, gemessene/geschätzte/fehlende Dauern, Deduplizierung, Quellenzuordnung, Sicherheit und kontrollierte Connector-Antworten.
+
+## Korrekturen der Abschlussprüfung
+
+- Bekannte Datenlücken bleiben nach späteren erfolgreichen inkrementellen Synchronisationen sichtbar; ein neuer Erfolg belegt keine Reparatur alter Lücken.
+- Widersprüchliche `externalId`-Werte werden bei der Importvorschau mit ursprünglicher Zeilennummer gemeldet. Auch nach einer veralteten Vorschau verhindert eine Transaktionsprüfung stillen Datenverlust; identische Wiederholungen bleiben ohne Duplikate.
+- Neue Künstler und Titel werden bei einem Quellenfilter weiterhin gegen die gesamte gespeicherte Historie geprüft. Die übrigen Kennzahlen bleiben auf die ausgewählte Quelle begrenzt.
+- Mobile Navigation ist im geschlossenen Zustand nicht fokussierbar; geöffnete Navigation unterstützt Tastaturfokus und Escape. Laufende Zeiträume bleiben auch auf kleinen Displays gekennzeichnet. PNG-Karten enthalten Quellen- und Abdeckungshinweise.
+- Der Workflow verwendet den vorhandenen BuildKit-Treiber des Runners und die offiziellen, per Digest festgelegten Images über ECR. Damit sind die zuvor beobachteten Docker-Hub-Timeouts umgangen.
 
 ## Entscheidungen
 
-- Next.js/React und Node.js 24 LTS, PostgreSQL; ein separater Worker nutzt eine persistente PostgreSQL-Auftragswarteschlange. Kein Redis notwendig.
-- Ein persönlicher Zugang. Setup benötigt einen konfigurierten Zufallstoken und ein eigenes Passwort. Keine Standardzugangsdaten.
-- Ereignisse werden pro Quelle dedupliziert. Quellenübergreifende Ähnlichkeit wird als mögliche Überschneidung angezeigt, nicht automatisch zusammengeführt.
-- Reale Daten und ausdrücklich markierter Demo-Modus sind getrennt.
-- Normale Docker-Produktion nutzt PostgreSQL. PGlite wird nur für lokale automatisierte Datenbanktests und Browserprüfung ohne installierten PostgreSQL-Server genutzt.
-- Lokales GitHub-Ziel laut Nutzer: https://github.com/Lua-x/Sonora (anfangs leer).
-- Keine Docker-Engine, kein WSL und keine GitHub-CLI in der geprüften Umgebung gefunden. Container-Abnahme bleibt bis zur Verfügbarkeit einer Engine ausdrücklich offen; Git-Zugang funktioniert.
+- Next.js/React, TypeScript, Node.js 24, PostgreSQL 17/Drizzle; persistente PostgreSQL-Aufträge statt zusätzlicher Redis-Infrastruktur.
+- Eigenes CSS und semantische React-Komponenten statt Tailwind/shadcn, um zusätzliche Komponenten-Abhängigkeiten für die persönliche Anwendung klein zu halten.
+- Ein persönlicher Zugang mit zufälligem Einrichtungstoken und selbst gewähltem Passwort. Keine Standardzugangsdaten, keine Geheimnisse im Repository.
+- Ereignisse werden je Quelle dedupliziert. Quellenübergreifende Ähnlichkeit wird gekennzeichnet und nicht automatisch zusammengeführt. ListenBrainz-Exporte benötigen eine ausdrückliche Zielkontozuordnung.
+- Reale Daten und ausdrücklich gekennzeichneter Demo-Modus bleiben getrennt. PGlite dient ausschließlich Entwicklung und Tests; Docker verwendet PostgreSQL.
+- Autorisiertes GitHub-Ziel: [Lua-x/Sonora](https://github.com/Lua-x/Sonora). Sinnvolle geprüfte Meilensteine werden ohne Force-Push gesichert.
 
-## Prüfung von Betrieb und CI am 09.10.2026
+## Externe Voraussetzungen und verbleibende Prüfgrenzen
 
-- Dockerfile und Compose-Konfiguration auf Startreihenfolge, produktive Worker-Abhängigkeiten, nichtprivilegierte Prozesse, Healthchecks und persistentes PostgreSQL-Volume geprüft. Die tatsächlich installierte Next.js-Dokumentation zu Deployment und Standalone-Ausgabe wurde berücksichtigt.
-- Der CI-Test prüft reale API-Abläufe statt eines isolierten Datenbank-Prüfeintrags: Erstsetup, Zugriffsschutz, Origin-Prüfung, Worker-Import, Wiederholungsimport, vier Kalenderzeiträume, Export, Ab-/Anmeldung und nach Container-Neuerstellung denselben Zugang, die Sitzung, Einstellungen, Daten und einen erneuten Worker-Auftrag. Der Demo-Modus wird auf Daten und Schreibschutz geprüft.
-- `node --check scripts/smoke.mjs` und ESLint für das neue Prüfsystem erfolgreich. Praktische Container-Ausführung bleibt bis zum erfolgreichen Actions-Lauf offen.
-- Aktuelle lokale Abhängigkeitsprüfung: `npm audit --json` meldet **0 Schwachstellen** (einschließlich Entwicklungsabhängigkeiten); `npm audit --omit=dev --audit-level=moderate` ebenfalls **0**. `braces@3.0.3` ist nur als Entwicklungsabhängigkeit über die Next.js-ESLint-Konfiguration vorhanden. Es ist derzeit keine Audit-Ausnahme konfiguriert; Produktionsfunde ab Schweregrad „moderate“ lassen CI fehlschlagen.
+- Der Nutzer richtet seine Quellenkonten ausdrücklich später selbst in Sonora ein. Eine reale Last.fm- oder ListenBrainz-Synchronisation wurde deshalb **nicht** bestätigt. Kontrollierte API-Tests prüfen die Implementierung, nicht die Erreichbarkeit und Datenabdeckung eines konkreten Kontos.
+- Auf dem Entwicklungsrechner ist keine Docker-Engine vorhanden. Die praktische Container-Abnahme erfolgte erfolgreich auf GitHub Actions. Für den eigenen Betrieb Docker Desktop/Engine mit Linux-Containern und Compose v2 bereitstellen.
+- Fernzugriff benötigt einen konfigurierten HTTPS-Reverse-Proxy und passende `APP_URL`. Backups einschließlich Verschlüsselungsschlüssel gemäß Betriebshandbuch selbst aufbewahren.
+- Den Status jedes späteren Commits und sein veröffentlichtes Image zeigt [GitHub Actions](https://github.com/Lua-x/Sonora/actions). Nur erfolgreiche Prüfungen erlauben die Veröffentlichung.

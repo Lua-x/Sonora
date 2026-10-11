@@ -112,7 +112,7 @@ function spotifyEvent(row: Record<string, unknown>, sourceId: string, warnings: 
 
 /** Pure server-side preview. No row is persisted until the user confirms this preview. */
 export function parseImport(text: string, format: ImportPreview['format'], sourceId: string): ImportPreview {
-  const result: ImportPreview = { format, events: [], errors: [], warnings: [], totalRows: 0 };
+  const result: ImportPreview = { format, events: [], eventRows: [], errors: [], warnings: [], totalRows: 0 };
   const warnings = new Set<string>();
   try {
     if (!['csv', 'json', 'spotify'].includes(format)) throw new Error('Unbekanntes Importformat.');
@@ -162,6 +162,7 @@ export function parseImport(text: string, format: ImportPreview['format'], sourc
           explicitIds.set(scopedId, key);
         } else event.externalId = eventId(event, occurrence);
         result.events.push(event);
+        result.eventRows.push(index + (format === 'csv' ? 2 : 1));
       } catch (error) {
         result.errors.push({ row: index + (format === 'csv' ? 2 : 1), message: error instanceof Error ? error.message : 'Ungültiger Datensatz.' });
       }

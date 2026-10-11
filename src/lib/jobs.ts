@@ -8,6 +8,14 @@ import {connectors,fetchListenBrainzNowPlaying} from './connectors';
 import {ConnectorError} from './connectors/http';
 import type {ListeningEvent} from './types';
 
+const persistentGapMarker=' Bekannte Datenlücke seit ';
+function retainKnownGap(previous:string,current:string,now:string) {
+  const marker=previous.indexOf(persistentGapMarker);
+  if(marker>=0) return current+previous.slice(marker);
+  if(!/Datenlücke/i.test(current)) return current;
+  return `${current}${persistentGapMarker}${now}: Ein späterer erfolgreicher inkrementeller Abruf bestätigt keine Reparatur der fehlenden Historie. Fehlende Daten gezielt ergänzen; dieser Hinweis bleibt bis zum Löschen und Neuaufbau der Quelle erhalten.`;
+}
+
 export async function enqueueSync(sourceId:string) {
   const db=await getDb();
   const [source]=await db.select().from(sources).where(eq(sources.id,sourceId));
@@ -37,13 +45,13 @@ export async function runOneJob() {
   if(!source) return true;
   // Lock in the same order as disconnect/delete. No in-flight provider response can
   // insert rows or revive a cancelled job after that transaction has completed.
-  async function withActiveJob(action:(tx:Parameters<Parameters<typeof db.transaction>[0]>[0])=>Promise<void>) {
+  async function withActiveJob(action:(tx:Parameters<Parameters<typeof db.transaction>[0]>[0],currentSource:typeof sources.$inferSelect)=>Promise<void>) {
     await db.transaction(async tx=>{
       const [currentSource]=await tx.select().from(sources).where(eq(sources.id,job.sourceId)).for('update');
       if(!currentSource) return;
       const [currentJob]=await tx.select().from(jobs).where(and(eq(jobs.id,id),eq(jobs.status,'running'))).for('update');
       if(!currentJob||(job.type==='sync'&&!currentSource.enabled)) return;
-      await action(tx);
+      await action(tx,currentSource);
     });
   }
   try {
@@ -73,10 +81,10 @@ export async function runOneJob() {
           coverageNote+=' Aktuelle Wiedergabe vorübergehend nicht verfügbar; der Hörverlauf wurde erfolgreich synchronisiert.';
         }
       }
-      await withActiveJob(async tx=>{
+      await withActiveJob(async (tx,currentSource)=>{
         const inserted=await insertEvents(page.events,tx);
         const now=new Date().toISOString();
-        await tx.update(sources).set({coverageNote,...(nowPlaying===undefined?{}:{nowPlaying}),error:null,
+        await tx.update(sources).set({coverageNote:retainKnownGap(currentSource.coverageNote,coverageNote,now),...(nowPlaying===undefined?{}:{nowPlaying}),error:null,
           ...(page.done?{lastSuccessAt:now,nextSyncAt:new Date(Date.now()+source.intervalMinutes*60000).toISOString()}:{})}).where(eq(sources.id,source.id));
         await tx.update(jobs).set({status:page.done?'complete':'queued',error:null,progress:page.done?100:Math.min(95,job.progress+1),payload:{cursor:page.cursor,since:job.payload.since,processed:(job.payload.processed||0)+page.events.length,inserted:(job.payload.inserted||0)+inserted},updatedAt:now}).where(eq(jobs.id,id));
       });

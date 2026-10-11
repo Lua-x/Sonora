@@ -3,7 +3,7 @@ import {and,desc,eq,or,sql} from 'drizzle-orm';
 import {z} from 'zod';
 import {getDb} from '@/lib/db';
 import {users,sessions,sources,jobs} from '@/lib/schema';
-import {allEvents,history,pageNumber,sourceStatuses} from '@/lib/repository';
+import {allEvents,findEventConflicts,history,pageNumber,sourceStatuses} from '@/lib/repository';
 import {assertSameOrigin,authenticated,clearAuthenticationLimit,createSession,encrypt,equalSecret,getUser,hash,hashPassword,HttpError,limitAuthentication,requestToken,requireAuth,sessionCookie,verifyPassword} from '@/lib/security';
 import {buildPeriod,computeAnalytics} from '@/lib/analytics';
 import {demoData} from '@/lib/demo';
@@ -72,8 +72,8 @@ async function dispatch(request:Request) {
     const date=url.searchParams.get('date')||new Intl.DateTimeFormat('en-CA',{timeZone:settings.timezone,year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date());
     const period=buildPeriod(kind,date,settings.timezone,url.searchParams.get('start')||undefined,url.searchParams.get('end')||undefined);
     const selected=url.searchParams.get('source'),sourceId=selected&&selected!=='all'?selected:undefined;
-    const data=demo()?demoData():{events:await allEvents(sourceId),sources:await sourceStatuses()};
-    return json(computeAnalytics(data.events.filter(e=>!sourceId||e.sourceId===sourceId),data.sources.filter(s=>!sourceId||s.id===sourceId),period));
+    const data=demo()?demoData():{events:await allEvents(),sources:await sourceStatuses()};
+    return json(computeAnalytics(data.events.filter(e=>!sourceId||e.sourceId===sourceId),data.sources.filter(s=>!sourceId||s.id===sourceId),period,new Date(),data.events));
   }
   if(path==='history'&&method==='GET') {
     if(!demo())return json(await history(url.searchParams));
@@ -123,6 +123,8 @@ async function dispatch(request:Request) {
       preview.warnings.push('ListenBrainz-Export wird separat gespeichert. Für belastbaren Abgleich mit einem synchronisierten Konto muss dessen Quelle ausdrücklich als Importziel ausgewählt werden.');
     }
     if(preview.totalRows>100000)throw new HttpError(413,'Maximal 100.000 Zeilen pro Datei. Bitte die Datei aufteilen.');
+    const conflicts=await findEventConflicts(preview.events,db);
+    preview.errors.push(...conflicts.map(conflict=>({row:preview.eventRows[conflict.index],message:conflict.message})));
     const previewId=randomUUID(),now=new Date().toISOString();
     if(!preview.errors.length&&preview.events.length)await db.transaction(async tx=>{
       const definitions=preview.restoredSources||[{id:sourceId,kind:input.sourceId?'listenbrainz' as const:input.format,label:input.format==='spotify'?'Spotify-Dateiexport':`${input.format.toUpperCase()}-Import`}];

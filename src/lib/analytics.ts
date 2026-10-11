@@ -134,7 +134,7 @@ function countOverlaps(events: ListeningEvent[]): number {
 }
 
 /** Counts only stored historical plays; uncertainty never becomes invented listening time. */
-export function computeAnalytics(events: ListeningEvent[], sources: SourceStatus[], period: PeriodRange, now: Date = new Date()): Analytics {
+export function computeAnalytics(events: ListeningEvent[], sources: SourceStatus[], period: PeriodRange, now: Date = new Date(), discoveryHistory: ListeningEvent[] = events): Analytics {
   const start = millis(period.start);
   const end = Math.min(millis(period.end), now.getTime());
   const previousStart = millis(period.previousStart);
@@ -144,7 +144,9 @@ export function computeAnalytics(events: ListeningEvent[], sources: SourceStatus
   const historical = valid.filter(event => !event.nowPlaying && millis(event.playedAt) <= now.getTime());
   const current = historical.filter(event => millis(event.playedAt) >= start && millis(event.playedAt) < end);
   const previous = historical.filter(event => millis(event.playedAt) >= previousStart && millis(event.playedAt) < previousEnd);
-  const before = historical.filter(event => millis(event.playedAt) < start);
+  // Source filters narrow the displayed metrics, but first discoveries still
+  // refer to the complete stored history across all sources.
+  const before = discoveryHistory.filter(event => !event.nowPlaying && millis(event.playedAt) <= now.getTime() && millis(event.playedAt) < start);
   const beforeArtists = new Set(before.map(event => identity(event.artist)));
   const beforeTracks = new Set(before.map(trackKey));
   const topArtists = ranked(current, event => identity(event.artist), event => ({ name: event.artist.trim() }));

@@ -79,6 +79,30 @@ describe('persistente Daten und Hintergrundaufträge',()=>{
     await enqueueSync(sourceId);await runOneJob();
     expect((await db.select().from(sources).where(eq(sources.id,sourceId)))[0].nowPlaying).toEqual([]);
   });
+  it('behält eine bekannte Datenlücke über saubere spätere Synchronisationen ohne Hinweisduplikate',async()=>{
+    const db=await getDb(),sourceId='lastfm:known-gap';
+    await db.insert(sources).values({id:sourceId,kind:'lastfm',label:'Known gap',username:'known-gap'});
+    vi.mocked(connectors.lastfm.fetchPage)
+      .mockResolvedValueOnce({events:[],cursor:null,done:true,coverageNote:'Historischer Abruf: ein ungültiger Eintrag ausgelassen; mögliche Datenlücke.'})
+      .mockResolvedValueOnce({events:[],cursor:null,done:true,coverageNote:'Inkrementeller Abruf mit 24 Stunden Überlappung.'})
+      .mockResolvedValueOnce({events:[],cursor:null,done:true,coverageNote:'Inkrementeller Abruf mit 24 Stunden Überlappung.'});
+    await enqueueSync(sourceId);await runOneJob();
+    const [initial]=await db.select().from(sources).where(eq(sources.id,sourceId));
+    const marker=initial.coverageNote.slice(initial.coverageNote.indexOf(' Bekannte Datenlücke seit '));
+    expect(marker).toMatch(/^ Bekannte Datenlücke seit \d{4}-\d{2}-\d{2}T/);
+    for(let i=0;i<2;i++) {
+      await enqueueSync(sourceId);await runOneJob();
+      const [source]=await db.select().from(sources).where(eq(sources.id,sourceId));
+      expect(source.coverageNote).toBe(`Inkrementeller Abruf mit 24 Stunden Überlappung.${marker}`);
+      expect(source.coverageNote.match(/Bekannte Datenlücke seit/g)).toHaveLength(1);
+      expect(source.lastSuccessAt).not.toBeNull();expect(source.error).toBeNull();
+    }
+    // A later provider failure stays visible independently of the retained gap.
+    vi.mocked(connectors.lastfm.fetchPage).mockRejectedValueOnce(new ConnectorError('Zugriff abgelehnt.'));
+    await enqueueSync(sourceId);await runOneJob();
+    const [failed]=await db.select().from(sources).where(eq(sources.id,sourceId));
+    expect(failed.error).toBe('Zugriff abgelehnt.');expect(failed.coverageNote).toContain(marker);
+  });
   it('holt ListenBrainz playing-now einmal nach der letzten Historienseite und speichert es nur transient',async()=>{
     const db=await getDb(),sourceId='listenbrainz:playing';
     const live={...play('live',sourceId),sourceKind:'listenbrainz' as const,playedAt:new Date().toISOString(),nowPlaying:true};
