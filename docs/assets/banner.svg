@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="420" viewBox="0 0 1280 420" role="img" aria-labelledby="title description">
+  <title id="title">Sonora — Your music, in perspective.</title>
+  <desc id="description">A dark green Sonora banner with lime sound waves and circular record grooves. Self-hosted music analytics and personal listening recaps.</desc>
+  <defs>
+    <linearGradient id="background" x2="1" y2="1"><stop stop-color="#111713"/><stop offset="1" stop-color="#1c2818"/></linearGradient>
+    <linearGradient id="accent"><stop stop-color="#dcf5a4"/><stop offset="1" stop-color="#9fbd71"/></linearGradient>
+    <clipPath id="frame"><rect width="1280" height="420" rx="24"/></clipPath>
+  </defs>
+  <g clip-path="url(#frame)">
+    <rect width="1280" height="420" fill="url(#background)"/>
+    <g fill="none" stroke="#c8e692" stroke-opacity=".12">
+      <circle cx="1100" cy="210" r="80"/><circle cx="1100" cy="210" r="125"/><circle cx="1100" cy="210" r="170"/><circle cx="1100" cy="210" r="215"/><circle cx="1100" cy="210" r="260"/><circle cx="1100" cy="210" r="305"/>
+    </g>
+    <g stroke="url(#accent)" stroke-width="6" stroke-linecap="round" transform="translate(66 66)">
+      <path d="M0 13v14M12 5v30M24 0v40M36 10v20M48 16v8"/>
+    </g>
+    <g font-family="Arial, Helvetica, sans-serif">
+      <text x="132" y="103" fill="#f4f6ed" font-size="48" font-weight="700" letter-spacing="-2">sonora<tspan fill="#cde99b">.</tspan></text>
+      <text x="64" y="205" fill="#f4f6ed" font-size="52" font-weight="700" letter-spacing="-1.5">Your music, in perspective.</text>
+      <text x="67" y="254" fill="#acb6a6" font-size="23">A personal home for your listening history and recaps.</text>
+      <rect x="64" y="315" width="138" height="34" rx="17" fill="#cde99b"/>
+      <text x="133" y="338" text-anchor="middle" fill="#1c2818" font-size="14" font-weight="700" letter-spacing="1">SELF-HOSTED</text>
+      <text x="223" y="338" fill="#bac5b2" font-size="16">Docker ready</text>
+      <circle cx="337" cy="332" r="2" fill="#75856a"/>
+      <text x="357" y="338" fill="#bac5b2" font-size="16">Your data stays with you</text>
+    </g>
+  </g>
+</svg>
